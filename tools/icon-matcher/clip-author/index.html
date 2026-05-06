@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Icon Matcher — CLIP</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg: #0c0c0f;
+      --surface: #16161a;
+      --surface-raised: #1e1e24;
+      --border: #2a2a32;
+      --border-active: #5e5ce6;
+      --text: #e8e6e3;
+      --text-muted: #7f7f8c;
+      --accent: #5e5ce6;
+      --accent-glow: rgba(94, 92, 230, 0.25);
+      --green: #34c759;
+      --orange: #ff9f0a;
+      --red: #ff453a;
+      --radius: 12px;
+      --mono: "DM Mono", "SF Mono", monospace;
+      --sans: "Instrument Sans", system-ui, sans-serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 20% 10%, rgba(94,92,230,0.08), transparent),
+        radial-gradient(ellipse 50% 50% at 80% 80%, rgba(52,199,89,0.05), transparent);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+    header .badge {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: var(--accent-glow);
+      border: 1px solid rgba(94,92,230,0.3);
+      padding: 4px 14px;
+      border-radius: 100px;
+      margin-bottom: 16px;
+    }
+    header h1 {
+      font-size: clamp(28px, 5vw, 42px);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 12px;
+    }
+    header p {
+      color: var(--text-muted);
+      font-size: 15px;
+      max-width: 480px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 36px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .status-dot.ready   { background: var(--green); box-shadow: 0 0 8px rgba(52,199,89,0.5); }
+    .status-dot.loading { background: var(--orange); animation: pulse 1s infinite; }
+    .status-dot.error   { background: var(--red); }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* Download progress bar shown during model load */
+    .download-bar {
+      display: none;
+      height: 3px;
+      background: var(--surface-raised);
+      border-radius: 3px;
+      margin: -24px 0 28px;
+      overflow: hidden;
+    }
+    .download-bar.visible { display: block; }
+    .download-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+
+    .upload-zone {
+      position: relative;
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: var(--surface);
+      margin-bottom: 40px;
+    }
+    .upload-zone:hover,
+    .upload-zone.dragover {
+      border-color: var(--accent);
+      background: rgba(94,92,230,0.04);
+    }
+    .upload-zone input { display: none; }
+    .upload-zone .icon-upload {
+      width: 48px; height: 48px;
+      margin: 0 auto 16px;
+      opacity: 0.5;
+    }
+    .upload-zone h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+    .upload-zone p  { font-size: 13px; color: var(--text-muted); }
+    .upload-zone .paste-hint {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 12px;
+      opacity: 0.6;
+    }
+
+    .query-preview {
+      display: none;
+      align-items: center;
+      gap: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 36px;
+    }
+    .query-preview.visible { display: flex; }
+    .thumb-pair {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .thumb-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
+    .thumb-item img {
+      width: 64px; height: 64px;
+      object-fit: contain;
+      border-radius: 8px;
+      background: #fff;
+      padding: 6px;
+    }
+    .thumb-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .thumb-arrow {
+      width: 14px; height: 14px;
+      color: var(--text-muted);
+      opacity: 0.5;
+      flex-shrink: 0;
+      margin-bottom: 14px;
+    }
+    .thumb-groups {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .thumb-group-divider {
+      font-family: var(--mono);
+      font-size: 18px;
+      color: var(--text-muted);
+      opacity: 0.4;
+      flex-shrink: 0;
+      margin-bottom: 14px;
+      user-select: none;
+    }
+    .inv-badge {
+      display: inline-block;
+      font-size: 9px;
+      font-family: var(--mono);
+      background: rgba(94,92,230,0.15);
+      border: 1px solid rgba(94,92,230,0.3);
+      color: var(--accent);
+      padding: 1px 4px;
+      border-radius: 4px;
+      margin-left: 4px;
+      vertical-align: middle;
+      letter-spacing: 0.03em;
+    }
+
+    /* ── Invert toggle ───────────────────────────── */
+    .options-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin: -20px 0 28px;
+    }
+    .toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 5px 12px 5px 8px;
+      border-radius: 100px;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+      user-select: none;
+    }
+    .toggle-btn:hover { border-color: var(--accent); color: var(--text); }
+    .toggle-btn.active { border-color: var(--accent); color: var(--text); }
+    .toggle-pill {
+      width: 28px; height: 15px;
+      border-radius: 8px;
+      background: var(--surface-raised);
+      position: relative;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .toggle-pill::after {
+      content: '';
+      position: absolute;
+      width: 11px; height: 11px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      top: 2px; left: 2px;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .toggle-btn.active .toggle-pill { background: rgba(94,92,230,0.3); }
+    .toggle-btn.active .toggle-pill::after { transform: translateX(13px); background: var(--accent); }
+    .query-preview .info { flex: 1; }
+    .query-preview .info h4 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+    .query-preview .info p  { font-size: 12px; font-family: var(--mono); color: var(--text-muted); }
+    .query-preview .processing      { font-family: var(--mono); font-size: 12px; color: var(--orange); }
+    .query-preview .processing.done { color: var(--green); }
+
+    .results-section { display: none; }
+    .results-section.visible { display: block; }
+    .results-section h2 {
+      font-size: 14px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 16px;
+    }
+
+    .result-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 16px;
+      text-align: center;
+      transition: border-color 0.2s, transform 0.15s;
+      animation: cardIn 0.35s ease both;
+    }
+    .result-card:hover { border-color: var(--border-active); transform: translateY(-2px); }
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .result-card .rank { font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-bottom: 12px; }
+    .result-card .icon-wrap {
+      width: 64px; height: 64px;
+      margin: 0 auto 14px;
+      background: #fff;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .result-card .icon-wrap img { max-width: 48px; max-height: 48px; object-fit: contain; }
+    .result-card .label  { font-size: 13px; font-weight: 600; margin-bottom: 8px; line-height: 1.3; }
+    .result-card .score-bar-track {
+      height: 4px;
+      background: var(--surface-raised);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .result-card .score-bar-fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width 0.5s ease; }
+    .result-card .score { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+    .result-card:nth-child(1) .score-bar-fill { background: var(--green); }
+    .result-card:nth-child(2) .score-bar-fill { background: var(--accent); }
+
+    footer {
+      margin-top: 60px;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <header>
+      <div class="badge">CLIP ViT-B/32 • Local • In-Browser</div>
+      <h1>Icon Matcher</h1>
+      <p>Upload or paste a screenshot of a tool icon and instantly find the closest matches from your indexed library.</p>
+    </header>
+
+    <div class="status-bar">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Initializing…</span>
+    </div>
+
+    <!-- Progress bar visible only during model download -->
+    <div class="download-bar" id="downloadBar">
+      <div class="download-bar-fill" id="downloadFill" style="width: 0%"></div>
+    </div>
+
+    <div class="upload-zone" id="uploadZone">
+      <svg class="icon-upload" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M24 32V16m0 0l-8 8m8-8l8 8" />
+        <rect x="6" y="6" width="36" height="36" rx="8" />
+      </svg>
+      <h3>Drop an icon screenshot here</h3>
+      <p>or click to browse — PNG, JPG, WebP supported</p>
+      <div class="paste-hint">⌘V / Ctrl+V to paste from clipboard</div>
+      <input type="file" id="fileInput" accept="image/*" />
+    </div>
+
+    <div class="options-bar">
+      <button class="toggle-btn active" id="invertToggle">
+        <span class="toggle-pill"></span>
+        Match inverted
+      </button>
+    </div>
+
+    <div class="query-preview" id="queryPreview">
+      <div class="thumb-groups">
+
+        <!-- Original query -->
+        <div class="thumb-pair">
+          <div class="thumb-item">
+            <img id="queryImg" src="" alt="Uploaded" />
+            <span class="thumb-label">uploaded</span>
+          </div>
+          <svg class="thumb-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 8h10M9 4l4 4-4 4"/>
+          </svg>
+          <div class="thumb-item">
+            <img id="processedImg" src="" alt="Sent to CLIP" />
+            <span class="thumb-label">to clip</span>
+          </div>
+        </div>
+
+        <div class="thumb-group-divider" id="invertGroupDivider">+</div>
+
+        <!-- Inverted query -->
+        <div class="thumb-pair" id="invertedPair">
+          <div class="thumb-item">
+            <img id="invertedImg" src="" alt="Inverted" />
+            <span class="thumb-label">inverted</span>
+          </div>
+          <svg class="thumb-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 8h10M9 4l4 4-4 4"/>
+          </svg>
+          <div class="thumb-item">
+            <img id="invertedProcessedImg" src="" alt="Inverted sent to CLIP" />
+            <span class="thumb-label">inv to clip</span>
+          </div>
+        </div>
+
+      </div>
+      <div class="info">
+        <h4 id="queryName">Uploaded Icon</h4>
+        <p id="queryMeta">—</p>
+      </div>
+      <span class="processing" id="queryStatus">⏳ Processing…</span>
+    </div>
+
+    <div class="results-section" id="resultsSection">
+      <h2>Top 30 Matches</h2>
+      <div class="results-grid" id="resultsGrid"></div>
+    </div>
+
+    <footer>
+      CLIP ViT-B/32 • @xenova/transformers • cosine similarity • runs 100% in your browser
+    </footer>
+  </div>
+
+<script type="module">
+import {
+  AutoProcessor,
+  CLIPVisionModelWithProjection,
+  RawImage,
+  env,
+} from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js';
+
+// Use browser IndexedDB cache — model is ~87 MB on first load, then instant
+env.allowLocalModels = false;
+env.useBrowserCache  = true;
+
+const IMG_SIZE = 224;
+const TOP_K    = 30;
+const MODEL_ID = 'Xenova/clip-vit-base-patch32';
+
+let processor  = null;
+let clipModel  = null;
+let iconIndex  = null;
+let lastFile   = null;  // re-run on toggle change
+
+const $ = sel => document.querySelector(sel);
+
+function setStatus(state, msg) {
+  $('#statusDot').className = 'status-dot ' + state;
+  $('#statusText').textContent = msg;
+}
+
+// ── Init ────────────────────────────────────────────────────────────────────
+async function init() {
+  setStatus('loading', 'Loading CLIP model — first run downloads ~87 MB, then cached…');
+  $('#downloadBar').classList.add('visible');
+
+  try {
+    // Track per-file download progress and average them
+    const fileProgress = {};
+
+    function onProgress(data) {
+      if (data.status === 'progress' && data.file) {
+        fileProgress[data.file] = data.progress || 0;
+        const vals = Object.values(fileProgress);
+        const avg  = vals.reduce((a, b) => a + b, 0) / vals.length;
+        $('#downloadFill').style.width = avg + '%';
+        setStatus('loading', `Downloading CLIP model… ${avg.toFixed(0)}%`);
+      }
+    }
+
+    const [m, proc, res] = await Promise.all([
+      CLIPVisionModelWithProjection.from_pretrained(MODEL_ID, { progress_callback: onProgress }),
+      AutoProcessor.from_pretrained(MODEL_ID),
+      fetch('icon-index.json'),
+    ]);
+
+    clipModel = m;
+    processor = proc;
+    $('#downloadBar').classList.remove('visible');
+
+    if (!res.ok) throw new Error(`Index fetch failed: ${res.status}`);
+    iconIndex = await res.json();
+
+    if (iconIndex.version !== 2 || iconIndex.model !== MODEL_ID) {
+      const built = iconIndex.model ?? `version ${iconIndex.version ?? 'unknown'}`;
+      $('#downloadBar').classList.remove('visible');
+      setStatus('error', `Index mismatch: built with "${built}" — re-run: node index-icons-clip.js`);
+      return; // leave upload zone inert
+    }
+
+    setStatus('ready', `Ready — ${iconIndex.count} icons indexed`);
+    enableUpload();
+  } catch (err) {
+    console.error(err);
+    $('#downloadBar').classList.remove('visible');
+    if (err.message.includes('Index fetch')) {
+      setStatus('error', 'icon-index.json not found — run node index-icons-clip.js first');
+    } else {
+      setStatus('error', `Load failed: ${err.message}`);
+    }
+  }
+}
+
+// ── Upload handling ─────────────────────────────────────────────────────────
+function enableUpload() {
+  const zone  = $('#uploadZone');
+  const input = $('#fileInput');
+
+  zone.addEventListener('click', () => input.click());
+  input.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+  zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', ()  => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) handleFile(file);
+  });
+
+  document.addEventListener('paste', e => {
+    for (const item of (e.clipboardData?.items ?? [])) {
+      if (item.type.startsWith('image/')) { handleFile(item.getAsFile()); return; }
+    }
+  });
+
+  // Toggle invert matching; re-run immediately if an image is already loaded
+  $('#invertToggle').addEventListener('click', () => {
+    $('#invertToggle').classList.toggle('active');
+    if (lastFile) handleFile(lastFile);
+  });
+}
+
+// ── Process uploaded file ───────────────────────────────────────────────────
+async function handleFile(file) {
+  const preview       = $('#queryPreview');
+  const qImg          = $('#queryImg');
+  const qName         = $('#queryName');
+  const qMeta         = $('#queryMeta');
+  const qStatus       = $('#queryStatus');
+  const resultsSection = $('#resultsSection');
+
+  const url = URL.createObjectURL(file);
+  qImg.src  = url;                          // always shows the raw upload
+  $('#processedImg').src        = '';       // cleared until processing completes
+  $('#invertedImg').src         = '';
+  $('#invertedProcessedImg').src = '';
+  qName.textContent = file.name || 'Pasted Image';
+  qMeta.textContent = `${(file.size / 1024).toFixed(1)} KB`;
+  qStatus.textContent = '⏳ Extracting features…';
+  qStatus.classList.remove('done');
+  preview.classList.add('visible');
+  resultsSection.classList.remove('visible');
+
+  setStatus('loading', 'Processing…');
+
+  lastFile = file;
+
+  try {
+    const img         = await loadImage(url);
+    const useInversion = $('#invertToggle').classList.contains('active');
+
+    // Show/hide the inverted thumbnail group based on toggle
+    $('#invertGroupDivider').style.display = useInversion ? '' : 'none';
+    $('#invertedPair').style.display       = useInversion ? '' : 'none';
+
+    // ── Original pipeline ──────────────────────────────────────────────────
+    const canvas = preprocessImage(img);
+    const { canvas: queryCanvas, cropped, coverage } = cropToContent(canvas, img);
+    $('#processedImg').src = queryCanvas.toDataURL();
+    if (cropped) {
+      qMeta.textContent = `${(file.size / 1024).toFixed(1)} KB · auto-cropped (icon was ${(coverage * 100).toFixed(0)}% of frame)`;
+    }
+
+    // ── Inverted pipeline (only when toggle is on) ─────────────────────────
+    const embeddings = [await extractEmbedding(queryCanvas)];
+
+    if (useInversion) {
+      const invertedSrc = invertImageToCanvas(img);
+      const canvasInv   = preprocessImage(invertedSrc);
+      const { canvas: invertedQueryCanvas } = cropToContent(canvasInv, invertedSrc);
+      $('#invertedImg').src          = canvasInv.toDataURL();
+      $('#invertedProcessedImg').src = invertedQueryCanvas.toDataURL();
+      embeddings.push(await extractEmbedding(invertedQueryCanvas));
+    }
+
+    const matches = findTopKMerged(embeddings, TOP_K);
+
+    qStatus.textContent = `✅ Done — ${matches[0].score.toFixed(1)}% top match`;
+    qStatus.classList.add('done');
+    renderResults(matches);
+    setStatus('ready', `Ready — ${iconIndex.count} icons indexed`);
+  } catch (err) {
+    console.error(err);
+    qStatus.textContent = '❌ ' + err.message;
+    setStatus('error', 'Processing failed');
+  }
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload  = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = src;
+  });
+}
+
+// ── Preprocessing ───────────────────────────────────────────────────────────
+function preprocessImage(img) {
+  const canvas = document.createElement('canvas');
+  canvas.width  = IMG_SIZE;
+  canvas.height = IMG_SIZE;
+  const ctx = canvas.getContext('2d');
+
+  // White background — flattens transparency, matches indexer's sharp preprocessing
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, IMG_SIZE, IMG_SIZE);
+
+  // Contain-fit with aspect ratio preserved (letterbox)
+  const scale = Math.min(IMG_SIZE / img.width, IMG_SIZE / img.height);
+  const w = img.width  * scale;
+  const h = img.height * scale;
+  ctx.drawImage(img, (IMG_SIZE - w) / 2, (IMG_SIZE - h) / 2, w, h);
+
+  return canvas;
+}
+
+// ── Color inversion ─────────────────────────────────────────────────────────
+/**
+ * Draws img onto a same-size canvas and inverts every pixel (255 - channel).
+ * Alpha is preserved so the subsequent preprocessing pipeline (white-bg
+ * flatten, contain-fit) treats it identically to the original.
+ */
+function invertImageToCanvas(img) {
+  const c = document.createElement('canvas');
+  c.width  = img.naturalWidth  || img.width;
+  c.height = img.naturalHeight || img.height;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const id = ctx.getImageData(0, 0, c.width, c.height);
+  const d  = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i]     = 255 - d[i];
+    d[i + 1] = 255 - d[i + 1];
+    d[i + 2] = 255 - d[i + 2];
+    // d[i+3] (alpha) unchanged
+  }
+  ctx.putImageData(id, 0, 0);
+  return c;
+}
+
+// ── Auto-crop to content ────────────────────────────────────────────────────
+/**
+ * Detects the tight bounding box of non-background pixels in processedCanvas
+ * (224×224), maps it back to the original image coordinates, and re-renders
+ * at 224×224 from the high-resolution source for a clean result.
+ *
+ * Background color is estimated from the four corner regions so this works
+ * for both light and dark backgrounds.
+ *
+ * Returns { canvas, cropped: bool, coverage: 0–1 } where coverage is the
+ * fraction of the 224×224 canvas the content occupied before cropping.
+ */
+function cropToContent(processedCanvas, originalImg) {
+  const W = processedCanvas.width, H = processedCanvas.height;
+  const ctx = processedCanvas.getContext('2d');
+  const { data } = ctx.getImageData(0, 0, W, H);
+
+  // Estimate background color from 4×4 corner samples
+  const SAMPLE = 4;
+  let sr = 0, sg = 0, sb = 0, n = 0;
+  const addCorner = (x0, y0) => {
+    for (let dy = 0; dy < SAMPLE; dy++) for (let dx = 0; dx < SAMPLE; dx++) {
+      const i = ((y0 + dy) * W + (x0 + dx)) * 4;
+      sr += data[i]; sg += data[i + 1]; sb += data[i + 2]; n++;
+    }
+  };
+  addCorner(0, 0); addCorner(W - SAMPLE, 0);
+  addCorner(0, H - SAMPLE); addCorner(W - SAMPLE, H - SAMPLE);
+  const bgR = sr / n, bgG = sg / n, bgB = sb / n;
+
+  // Find bounding box of pixels that differ from background
+  const THRESH = 30; // Manhattan distance in RGB space
+  let minX = W, minY = H, maxX = -1, maxY = -1;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      if (Math.abs(data[i] - bgR) + Math.abs(data[i + 1] - bgG) + Math.abs(data[i + 2] - bgB) > THRESH) {
+        if (x < minX) minX = x; if (y < minY) minY = y;
+        if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX < 0) return { canvas: processedCanvas, cropped: false, coverage: 1 };
+
+  const coverage = ((maxX - minX + 1) * (maxY - minY + 1)) / (W * H);
+  if (coverage > 0.5) return { canvas: processedCanvas, cropped: false, coverage };
+
+  // Add 8% padding around the detected bbox (in canvas space)
+  const padX = Math.round((maxX - minX) * 0.08);
+  const padY = Math.round((maxY - minY) * 0.08);
+  const cX1 = Math.max(0, minX - padX),      cY1 = Math.max(0, minY - padY);
+  const cX2 = Math.min(W - 1, maxX + padX),  cY2 = Math.min(H - 1, maxY + padY);
+
+  // Map the canvas-space bbox back to original image coordinates so we
+  // re-render from the full-resolution source (not a 224×224 downscale).
+  const imgScale = Math.min(IMG_SIZE / originalImg.width, IMG_SIZE / originalImg.height);
+  const imgDrawX = (IMG_SIZE - originalImg.width  * imgScale) / 2;
+  const imgDrawY = (IMG_SIZE - originalImg.height * imgScale) / 2;
+
+  const ix1 = Math.max(0, (cX1 - imgDrawX) / imgScale);
+  const iy1 = Math.max(0, (cY1 - imgDrawY) / imgScale);
+  const ix2 = Math.min(originalImg.width,  (cX2 - imgDrawX) / imgScale);
+  const iy2 = Math.min(originalImg.height, (cY2 - imgDrawY) / imgScale);
+  const iW = ix2 - ix1, iH = iy2 - iy1;
+
+  if (iW <= 0 || iH <= 0) return { canvas: processedCanvas, cropped: false, coverage };
+
+  // Re-render the cropped region at 224×224 with white background + contain-fit
+  const out = document.createElement('canvas');
+  out.width = IMG_SIZE; out.height = IMG_SIZE;
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#FFFFFF';
+  octx.fillRect(0, 0, IMG_SIZE, IMG_SIZE);
+  const outScale = Math.min(IMG_SIZE / iW, IMG_SIZE / iH);
+  const dw = iW * outScale, dh = iH * outScale;
+  octx.drawImage(originalImg, ix1, iy1, iW, iH, (IMG_SIZE - dw) / 2, (IMG_SIZE - dh) / 2, dw, dh);
+
+  return { canvas: out, cropped: true, coverage };
+}
+
+// ── CLIP embedding ──────────────────────────────────────────────────────────
+async function extractEmbedding(canvas) {
+  const ctx       = canvas.getContext('2d');
+  const imageData = ctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE);
+
+  // getImageData is always RGBA (4 bytes/px). Strip alpha to match the
+  // 3-channel RGB RawImage the indexer produces — CLIPImageProcessor
+  // applies 3-channel normalization; 4-channel input breaks it.
+  const rgba = imageData.data;
+  const rgb  = new Uint8ClampedArray(IMG_SIZE * IMG_SIZE * 3);
+  for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) {
+    rgb[j]     = rgba[i];
+    rgb[j + 1] = rgba[i + 1];
+    rgb[j + 2] = rgba[i + 2];
+  }
+
+  const rawImage = new RawImage(rgb, IMG_SIZE, IMG_SIZE, 3);
+
+  const inputs = await processor(rawImage);
+  const { image_embeds } = await clipModel(inputs);
+
+  const arr  = Array.from(image_embeds.data);
+  const norm = Math.sqrt(arr.reduce((s, v) => s + v * v, 0));
+  return norm === 0 ? arr : arr.map(v => v / norm);
+}
+
+// ── Cosine similarity + Top-K ───────────────────────────────────────────────
+function cosineSimilarity(a, b) {
+  let dot = 0;
+  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
+  return dot;
+}
+
+/**
+ * Score every indexed icon against all provided query embeddings, take the
+ * MAX score across embeddings (so an icon surfaces if it matches ANY variant),
+ * and return the top-k sorted by that score.
+ */
+function findTopKMerged(embeddings, k) {
+  const scored = iconIndex.icons.map(icon => {
+    let best = -Infinity, bestIdx = 0;
+    embeddings.forEach((emb, idx) => {
+      const s = cosineSimilarity(emb, icon.embedding);
+      if (s > best) { best = s; bestIdx = idx; }
+    });
+    return { ...icon, similarity: best, queryIdx: bestIdx };
+  });
+
+  scored.sort((a, b) => b.similarity - a.similarity);
+
+  const topSim = scored[0].similarity;
+  return scored.slice(0, k).map((item, i) => ({
+    rank:     i + 1,
+    id:       item.id,
+    label:    item.label,
+    file:     item.file,
+    score:    item.similarity * 100,
+    bar:      topSim > 0 ? (item.similarity / topSim) * 100 : 0,
+    inverted: item.queryIdx === 1,  // true when inverted query gave the better score
+  }));
+}
+
+// ── Render results ──────────────────────────────────────────────────────────
+function renderResults(matches) {
+  const grid    = $('#resultsGrid');
+  const section = $('#resultsSection');
+
+  grid.innerHTML = '';
+
+  matches.forEach((m, i) => {
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    card.style.animationDelay = `${i * 0.07}s`;
+
+    const fallback = `data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2020/svg%22 viewBox=%220 0 48 48%22><text y=%2232%22 x=%2212%22 font-size=%2224%22>?</text></svg>`;
+    const invBadge = m.inverted ? `<span class="inv-badge">inv</span>` : '';
+    card.innerHTML = `
+      <div class="rank">#${m.rank}${invBadge}</div>
+      <div class="icon-wrap">
+        <img src="icons/${m.file}" alt="${m.label}" onerror="this.src='${fallback}'" />
+      </div>
+      <div class="label">${m.label}</div>
+      <div class="score-bar-track">
+        <div class="score-bar-fill" style="width: ${m.bar}%"></div>
+      </div>
+      <div class="score">${m.score.toFixed(1)}%</div>
+    `;
+
+    grid.appendChild(card);
+  });
+
+  section.classList.add('visible');
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
